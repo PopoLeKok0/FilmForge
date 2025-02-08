@@ -1,0 +1,3 @@
+cd Java_OO
+javac Movie.java User.java Recommendation.java RecommendationEngine.java
+java RecommendationEngine 44 movies.csv ratings.csv
