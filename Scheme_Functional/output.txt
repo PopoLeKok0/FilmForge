@@ -1,0 +1,2 @@
+
+Similarity between user 1 and 31 (from test.csv): 0.17391304347826086

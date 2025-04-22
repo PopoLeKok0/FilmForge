@@ -1,0 +1,186 @@
+#lang scheme
+(require srfi/13) ; Required for string-split
+
+; lecture de csv
+; Reads lines from a file and splits them by comma.
+; Input: filename (string) - Path to the CSV file.
+; Output: list - A list of lists, where each inner list contains strings from a CSV line.
+(define (read-f filename) (call-with-input-file filename
+      (lambda (input-port)
+       (let loop ((line (read-line input-port)))
+       (cond
+        ((eof-object? line) '())
+        (#t (begin (cons (string-split line ",") (loop (read-line input-port))))))))))
+
+; conversion du csv en liked/notLiked
+; Converts a rating line (list of strings) into a structured rating list.
+; Input: L (list) - A list of strings like '("userID" "movieID" "rating").
+; Output: list - A list like '(userID movieID liked?) where liked? is boolean (#t if rating >= 3.5).
+(define (convert-rating L) (list (string->number (car L))
+                                 (string->number (cadr L))
+                                 (>= (string->number (caddr L)) 3.5))) ; Use >= 3.5 for liked
+
+; Permet de définir la liste Ratings
+; Load ratings from the specified file.
+; test.csv does not have a header, so no cdr needed.
+(define Ratings (map convert-rating (read-f "test.csv")))
+
+; ==================================
+; List Utility Functions
+; ==================================
+
+; Checks if an item is present in a list.
+; Input: item (any) - The item to search for.
+; Input: lst (list) - The list to search within.
+; Output: boolean - #t if item is found, #f otherwise.
+(define (member? item lst)
+  (cond
+    ((null? lst) #f)
+    ((equal? item (car lst)) #t)
+    (else (member? item (cdr lst)))))
+
+; Removes duplicate elements from a list.
+; Keeps the first occurrence of each element.
+; Input: lst (list) - The list to process.
+; Output: list - A new list with duplicates removed.
+(define (remove-duplicates lst)
+  (let loop ((original lst) (result '()))
+    (cond
+      ((null? original) (reverse result)) ; Reverse at the end to preserve original relative order
+      ((member? (car original) result)
+       (loop (cdr original) result)) ; Skip if already in result
+      (else
+       (loop (cdr original) (cons (car original) result)))))) ; Add to result and continue
+
+; Computes the intersection of two lists (elements present in both).
+; Input: l1 (list) - The first list.
+; Input: l2 (list) - The second list.
+; Output: list - A new list containing common elements.
+(define (intersection l1 l2)
+  (cond
+    ((null? l1) '())
+    ((member? (car l1) l2) (cons (car l1) (intersection (cdr l1) l2)))
+    (else (intersection (cdr l1) l2))))
+
+; ==================================
+; User Data Management Functions
+; ==================================
+
+; Finds and returns the data for a specific user ID from the list of users.
+; Input: id (number) - The user ID to search for.
+; Input: list-of-users (list) - The list containing all user data formatted as '((userID (liked) (disliked)) ...).
+; Output: list or '() - The user data list '(userID (liked) (disliked)) or '() if not found.
+(define (get-user id list-of-users)
+  (cond
+    ((null? list-of-users) '()) ; Base case: User not found
+    ((= id (car (car list-of-users))) (car list-of-users)) ; Base case: Found user
+    (else (get-user id (cdr list-of-users))))) ; Recursive step: Check rest of the list
+
+; Adds a single movie rating to the list of users, updating existing users or adding new ones.
+; Input: rating (list) - A rating in the format '(userID movieID liked?).
+; Input: list-of-users (list) - The current list of user data.
+; Output: list - The updated list of user data.
+(define (add-rating rating list-of-users)
+  (let ((user-id (car rating))
+        (movie-id (cadr rating))
+        (liked? (caddr rating)))
+    (cond
+      ((null? list-of-users) ; Base case: list is empty, add the first user
+       (list (list user-id
+                   (if liked? (list movie-id) '())
+                   (if liked? '() (list movie-id)))))
+      ((= user-id (car (car list-of-users))) ; Base case: Found the user, update their lists
+       (let* ((current-user (car list-of-users))
+              (current-liked (cadr current-user))
+              (current-disliked (caddr current-user))
+              ; Add movie to the appropriate list only if not already present
+              (new-liked (if (and liked? (not (member? movie-id current-liked)))
+                             (cons movie-id current-liked)
+                             current-liked))
+              (new-disliked (if (and (not liked?) (not (member? movie-id current-disliked)))
+                                (cons movie-id current-disliked)
+                                current-disliked)))
+         ; Prepend the updated user entry and keep the rest of the original list
+         (cons (list user-id new-liked new-disliked)
+               (cdr list-of-users))))
+      (else ; Recursive step: User not found yet, keep current user and recurse on the rest
+       (cons (car list-of-users)
+             (add-rating rating (cdr list-of-users)))))))
+
+; Adds a list of ratings to the list of users by repeatedly calling add-rating.
+; Input: list-of-ratings (list) - A list of ratings '(userID movieID liked?).
+; Input: list-of-users (list) - The initial list of user data (often '()).
+; Output: list - The final list of user data after processing all ratings.
+(define (add-ratings list-of-ratings list-of-users)
+  (if (null? list-of-ratings)
+      list-of-users ; Base case: no more ratings to add, return the accumulated user list
+      (add-ratings (cdr list-of-ratings) ; Recursive step: process the rest of the ratings
+                   (add-rating (car list-of-ratings) list-of-users)))) ; Add the current rating to the list being built
+
+; ==================================
+; Similarity Calculation
+; ==================================
+
+; Computes the Jaccard similarity between two users based on their liked/disliked movies.
+; S(U1,U2)= (|L1 ∩ L2| + |D1 ∩ D2|) / |L1 ∪ L2 ∪ D1 ∪ D2|
+; Input: user-id1 (number) - The ID of the first user.
+; Input: user-id2 (number) - The ID of the second user.
+; Input: list-of-users (list) - The list containing data for all users.
+; Output: number - The similarity score (between 0.0 and 1.0), or 0 if users not found or denominator is zero.
+(define (similarity user-id1 user-id2 list-of-users)
+  (let ((user1 (get-user user-id1 list-of-users))
+        (user2 (get-user user-id2 list-of-users)))
+    ; Check if both users were found
+    (if (or (null? user1) (null? user2))
+        (begin ; Or (display "Error: One or both users not found.") (newline) 0)
+         0) ; Return 0 if any user is not found, as per example behavior
+        (let* ((liked1 (cadr user1))
+               (disliked1 (caddr user1))
+               (liked2 (cadr user2))
+               (disliked2 (caddr user2))
+               ; Numerator: |L1 ∩ L2| + |D1 ∩ D2|
+               (common-liked (length (intersection liked1 liked2)))
+               (common-disliked (length (intersection disliked1 disliked2)))
+               (numerator (+ common-liked common-disliked))
+               ; Denominator: |L1 ∪ L2 ∪ D1 ∪ D2| = unique movies rated by either user
+               (combined-movies (append liked1 disliked1 liked2 disliked2)) ; Store combined list
+               (all-movies (remove-duplicates combined-movies))
+               (denominator (length all-movies)))
+
+          ; Calculate similarity, handle division by zero
+          (if (= denominator 0)
+              0.0 ; Return 0.0 if there are no movies in the union (e.g., users rated nothing)
+              (/ (exact->inexact numerator) (exact->inexact denominator))))))) ; Ensure float division
+
+; ==================================
+; Examples / Testing
+; ==================================
+
+; Example function calls shown in the project description PDF (pages 21-23):
+
+; > (add-rating '(31 316 #f) (add-rating '(31 333 #t) '()))
+; Expected Result: ((31 (333) (316)))
+
+; > (add-rating '(31 362 #t) (add-rating '(31 316 #f) (add-rating '(31 333 #t) '())))
+; Expected Result: ((31 (362 333) (316)))
+
+; > (add-ratings '((3 44 #f) (3 55 #f) (3 66 #t) (7 44 #f) (3 11 #t) (7 88 #t)) '())
+; Expected Result: ((3 (11 66) (55 44)) (7 (88) (44))) ; Actual order may differ
+
+; > (add-ratings Ratings '()) ; Where Ratings is built from the full dataset
+; Expected Result: ((1 (260 235 231 216 163 157 151 110 101 50 47 6 3 1) (223 70))
+;                   (31 (367 362 356 349 333 260 235 231) (316 296 223)) ...)
+
+; > (get-user 31 (add-ratings Ratings '())) ; Where Ratings is built from the full dataset
+; Expected Result: (31 (367 362 356 349 333 260 235 231) (316 296 223))
+
+; > (similarity 33 88 list-of-users) ; Where list-of-users is built from the full dataset
+; Expected Result: 0.02912621359223301
+
+
+; Build the main user database from the loaded test.csv Ratings
+(define UserData (add-ratings Ratings '()))
+
+; Calculate and display similarity for users present in test.csv
+(define final-sim (similarity 1 31 UserData))
+(display "Similarity between user 1 and 31 (from test.csv): ") (display final-sim) (newline)

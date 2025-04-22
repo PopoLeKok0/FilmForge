@@ -1,7 +1,3 @@
-// Project CSI2120/CSI2520
-// Winter 2025
-// Robert Laganiere, uottawa.ca
-
 import java.util.List;
 
 public class Movie {

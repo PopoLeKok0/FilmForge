@@ -1,6 +1,3 @@
-// Project CSI2120/CSI2520
-// Winter 2025
-// Robert Laganiere, uottawa.ca
 import java.io.*;
 import java.util.*;
 import java.util.stream.Collectors;

@@ -1,0 +1,26 @@
+
+Instructions to run the movie recommendation system:
+
+1. Start SWI-Prolog:
+   swipl
+
+2. Load the project file:
+   ?- consult('projectMovie.pl').
+
+3. Initialize the data (load movies and ratings):
+   ?- init.
+
+4. To run individual tests:
+   ?- test(1). 
+   ?- test(2).  
+   ?- test(3).  
+   ?- test(4).  
+   ?- test(5).  
+
+5. To run all tests at once:
+   ?- test_all.
+
+6. To run recommendations for specific users:
+   ?- recommendations(44).
+   ?- recommendations(55).
+   ?- recommendations(66).
